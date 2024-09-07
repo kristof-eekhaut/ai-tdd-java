@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: ai-tdd
+
+  ai:
+    openai:
+      base-url: http://localhost:1234
+      api-key: 9999
