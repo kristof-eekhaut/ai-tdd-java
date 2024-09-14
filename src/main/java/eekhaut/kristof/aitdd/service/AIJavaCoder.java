@@ -1,9 +1,11 @@
 package eekhaut.kristof.aitdd.service;
 
+import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
 import org.springframework.stereotype.Component;
 
@@ -14,31 +16,53 @@ import java.util.Map;
 @Slf4j
 public class AIJavaCoder {
 
-    private static final SystemPromptTemplate SYSTEM_PROMPT_TEMPLATE = new SystemPromptTemplate(
+    private static final SystemPromptTemplate SYSTEM_PROMPT_TEMPLATE_CODE = new SystemPromptTemplate(
             """
-            You are an export Java programmer.
+            You are an expert Java programmer.
             Your task is to create the code for a Java program that solves the problem described by the user.
             
-            Respond only with the code. Do not provide additional explanation or text. Do not add formatting.
+            # Rules
+            Make sure to follow all the rules listed below when writing the code:
+            * Respond only with the code. Do not provide additional explanation or text. Do not add formatting or markdown.
+            * The main class of your program has to be named "{class_name}".
+            * The package name has to be "{package_name}".
+            * Make sure to add all import statements at the top of the file right below the package statement.
+            * All code has to be provided in the "{class_name}" class and has to be part of the same file.
+            * Don't write any tests. Only the production code.
             
-            The main class of your program has to be named "GeneratedCode".
-            The package name has to be "eekhaut.kristof.aitdd.generated".
-            Make sure to add all import statements at the top of the file right below the package statement.
-            All code has to be provided in the "GeneratedCode" class and has to be part of the same file.
-            Don't write any tests. Only the production code.
-            
+            # Example
             Below an example of a valid response is given within the <example> tags:
+            <example>{example_code}</example>
+            """);
+
+    private static final SystemPromptTemplate SYSTEM_PROMPT_TEMPLATE_TESTS = new SystemPromptTemplate(
+            """
+            You are an expert Java programmer.
+            Your task is to create the tests for a Java program that solves the problem described by the user.
             
+            # Rules
+            Make sure to follow all the rules listed below when writing the code for the tests:
+            * Respond only with the code for the tests. Do not provide additional explanation or text. Do not add formatting or markdown.
+            * The main class of the program is named "{class_name}". You do not have to write this class. Assume that it already exists.
+            * The test class that have to write has to be named "{test_class_name}".
+            * The package name has to be "{package_name}".
+            * Make sure to add all import statements at the top of the file right below the package statement.
+            * All code has to be provided in the "{test_class_name}" class and has to be part of the same file.
+            * Use JUnit 5 and AssertJ libraries for tests.
+            * Do not write the production class code. Only write the tests.
+            
+            # Example
+            Below an example of a valid response is given within the <example> tags:
             <example>{example_code}</example>
             """);
 
     private static final String EXAMPLE_CODE =
             """
-            package eekhaut.kristof.aitdd.generated;
+            package <<package_name>>;
             
             import java.util.List;
             
-            public class GeneratedCode {
+            public class <<class_name>> {
             
                 public static Integer sum(List<Integer> numbers) {
                     return numbers.stream()
@@ -48,7 +72,52 @@ public class AIJavaCoder {
             }
             """;
 
-    private static final PromptTemplate USER_PROMPT_TEMPLATE = new PromptTemplate("{query}");
+    private static final String EXAMPLE_TESTS =
+            """
+            package <<package_name>>;
+            
+            import org.junit.jupiter.api.Test;
+            
+            import java.util.Collections;
+            import java.util.List;
+            
+            import static org.assertj.core.api.Assertions.assertThat;
+            
+            class <<test_class_name>> {
+            
+                @Test
+                void whenListContainsOneNumber_thenResultIsThatNumber() {
+                    List<Integer> numbers = List.of(7);
+                    assertThat(<<class_name>>.sum(numbers)).isEqualTo(7);
+                }
+            
+                @Test
+                void whenListContainsTwoNumbers_thenNumbersAreAdded() {
+                    List<Integer> numbers = List.of(3, 8);
+                    assertThat(<<class_name>>.sum(numbers)).isEqualTo(11);
+                }
+            
+                @Test
+                void whenListContainsManyNumbers_thenNumbersAreAdded() {
+                    List<Integer> numbers = List.of(3, 8, -6, 9);
+                    assertThat(<<class_name>>.sum(numbers)).isEqualTo(14);
+                }
+            
+                @Test
+                void whenListIsEmpty_theResultIs0() {
+                    List<Integer> numbers = Collections.emptyList();
+                    assertThat(<<class_name>>.sum(numbers)).isEqualTo(0);
+                }
+            }
+            """;
+
+    @Builder
+    public record SystemPromptParams(
+            boolean isTest,
+            String packageName,
+            String className,
+            String testClassName
+    ) {}
 
     private final ChatClient aiClient;
 
@@ -56,9 +125,17 @@ public class AIJavaCoder {
         this.aiClient = chatClientBuilder.build();
     }
 
-    public String generateCode(String description) {
-        var systemMessage = SYSTEM_PROMPT_TEMPLATE.createMessage(Map.of("example_code", EXAMPLE_CODE));
-        var userMessage = USER_PROMPT_TEMPLATE.createMessage(Map.of("query", description));
+    public JavaClass generateCode(String packageName, String className, String description, boolean isTest) {
+        JavaClass javaClass = new JavaClass(packageName, className, false);
+        JavaClass testClass = javaClass.getTestJavaClass();
+
+        var systemMessage = systemPrompt(SystemPromptParams.builder()
+                .isTest(isTest)
+                .packageName(javaClass.packageName())
+                .className(javaClass.className())
+                .testClassName(testClass.className())
+                .build());
+        var userMessage = new UserMessage(description);
         var prompt = new Prompt(List.of(systemMessage, userMessage));
 
         log.info("Prompt:\n {}", prompt.getInstructions());
@@ -68,6 +145,26 @@ public class AIJavaCoder {
 
         log.info("Output:\n {}", output);
 
-        return output;
+        return (isTest ? testClass : javaClass).addContent(output);
+    }
+
+    private Message systemPrompt(SystemPromptParams params) {
+        SystemPromptTemplate systemPromptTemplate = params.isTest() ?
+                SYSTEM_PROMPT_TEMPLATE_TESTS : SYSTEM_PROMPT_TEMPLATE_CODE;
+        String codeExample = codeExample(params);
+        return systemPromptTemplate.createMessage(Map.of(
+                "example_code", codeExample,
+                "package_name", params.packageName(),
+                "class_name", params.className(),
+                "test_class_name", params.testClassName()
+        ));
+    }
+
+    public static String codeExample(SystemPromptParams params) {
+        String template = params.isTest() ? EXAMPLE_TESTS : EXAMPLE_CODE;
+        return template
+                .replaceAll("<<package_name>>", params.packageName())
+                .replaceAll("<<class_name>>", params.className())
+                .replaceAll("<<test_class_name>>", params.testClassName());
     }
 }
