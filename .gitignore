@@ -31,3 +31,5 @@ build/
 
 ### VS Code ###
 .vscode/
+/tmp/eekhaut/kristof/aitdd/generated/GeneratedCode.class
+/tmp/eekhaut/kristof/aitdd/generated/GeneratedCode.java

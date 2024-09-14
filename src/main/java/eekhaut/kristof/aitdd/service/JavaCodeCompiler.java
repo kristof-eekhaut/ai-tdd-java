@@ -16,7 +16,6 @@ public class JavaCodeCompiler {
 
     public File writeAndCompile(File directory, String javaClassName, String content) {
         File classFile = new File(directory, javaClassName + ".class");
-
         classFile.delete();
 
         File javaFile = writeJavaFile(directory, javaClassName, content);
