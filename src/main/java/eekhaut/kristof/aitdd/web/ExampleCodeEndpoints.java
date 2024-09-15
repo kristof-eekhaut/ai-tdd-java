@@ -45,7 +45,9 @@ public class ExampleCodeEndpoints {
 
         JavaClass outputClass = (isTest ? testClass : javaClass).addContent(output);
         File javaFile = javaCodeService.writeJavaFile(outputClass);
-        javaCodeService.compile(outputClass, javaFile);
+        JavaCodeService.CompilationResult compileResult = javaCodeService.compile(outputClass, javaFile);
+
+        log.info("Compile logging: \n{}", compileResult.logging());
 
         return ResponseEntity.ok(output);
     }
