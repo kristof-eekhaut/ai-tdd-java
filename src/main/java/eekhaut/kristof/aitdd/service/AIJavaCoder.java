@@ -1,11 +1,10 @@
 package eekhaut.kristof.aitdd.service;
 
-import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.chat.prompt.SystemPromptTemplate;
 import org.springframework.stereotype.Component;
 
@@ -29,6 +28,10 @@ public class AIJavaCoder {
             * Make sure to add all import statements at the top of the file right below the package statement.
             * All code has to be provided in the "{class_name}" class and has to be part of the same file.
             * Don't write any tests. Only the production code.
+            
+            # Tests
+            The user can provide a set of unit tests in the description. Your implementation must make all these
+            tests pass.
             
             # Example
             Below an example of a valid response is given within the <example> tags:
@@ -111,13 +114,17 @@ public class AIJavaCoder {
             }
             """;
 
-    @Builder
-    public record SystemPromptParams(
-            boolean isTest,
-            String packageName,
-            String className,
-            String testClassName
-    ) {}
+    private static final PromptTemplate USER_PROMPT_CODE = new PromptTemplate(
+            """
+            {description}
+            
+            # Tests
+            Below a class with tests is provided within the <tests> tags. Your implementation must make all these tests pass:
+            <tests>{tests}</tests>
+            """);
+
+    private static final PromptTemplate USER_PROMPT_TESTS = new PromptTemplate("{description}");
+
 
     private final ChatClient aiClient;
 
@@ -125,17 +132,23 @@ public class AIJavaCoder {
         this.aiClient = chatClientBuilder.build();
     }
 
-    public JavaClass generateCode(String packageName, String className, String description, boolean isTest) {
+    public JavaClass generateTests(String packageName, String className, String description) {
         JavaClass javaClass = new JavaClass(packageName, className, false);
         JavaClass testClass = javaClass.getTestJavaClass();
+        return generateCode(testClass, javaClass, description, true);
+    }
 
-        var systemMessage = systemPrompt(SystemPromptParams.builder()
-                .isTest(isTest)
-                .packageName(javaClass.packageName())
-                .className(javaClass.className())
-                .testClassName(testClass.className())
-                .build());
-        var userMessage = new UserMessage(description);
+    public JavaClass generateImplementation(String packageName, String className, String description, JavaClass testClass) {
+        JavaClass javaClass = new JavaClass(packageName, className, false);
+        return generateCode(testClass, javaClass, description, false);
+    }
+
+    private JavaClass generateCode(JavaClass testClass, JavaClass javaClass, String description, boolean isTest) {
+        var systemMessage = systemPrompt(testClass, javaClass, isTest);
+        var userMessage = (isTest ? USER_PROMPT_TESTS : USER_PROMPT_CODE).createMessage(Map.of(
+                "description", description,
+                "tests", testClass.content().orElse("")
+        ));
         var prompt = new Prompt(List.of(systemMessage, userMessage));
 
         log.info("Prompt:\n {}", prompt.getInstructions());
@@ -148,23 +161,23 @@ public class AIJavaCoder {
         return (isTest ? testClass : javaClass).addContent(output);
     }
 
-    private Message systemPrompt(SystemPromptParams params) {
-        SystemPromptTemplate systemPromptTemplate = params.isTest() ?
+    private Message systemPrompt(JavaClass testClass, JavaClass javaClass,boolean isTest) {
+        SystemPromptTemplate systemPromptTemplate = isTest ?
                 SYSTEM_PROMPT_TEMPLATE_TESTS : SYSTEM_PROMPT_TEMPLATE_CODE;
-        String codeExample = codeExample(params);
+        String codeExample = codeExample(testClass, javaClass, isTest);
         return systemPromptTemplate.createMessage(Map.of(
                 "example_code", codeExample,
-                "package_name", params.packageName(),
-                "class_name", params.className(),
-                "test_class_name", params.testClassName()
+                "package_name", javaClass.packageName(),
+                "class_name", javaClass.className(),
+                "test_class_name", testClass.className()
         ));
     }
 
-    public static String codeExample(SystemPromptParams params) {
-        String template = params.isTest() ? EXAMPLE_TESTS : EXAMPLE_CODE;
+    public static String codeExample(JavaClass testClass, JavaClass javaClass, boolean isTest) {
+        String template = isTest ? EXAMPLE_TESTS : EXAMPLE_CODE;
         return template
-                .replaceAll("<<package_name>>", params.packageName())
-                .replaceAll("<<class_name>>", params.className())
-                .replaceAll("<<test_class_name>>", params.testClassName());
+                .replaceAll("<<package_name>>", javaClass.packageName())
+                .replaceAll("<<class_name>>", javaClass.className())
+                .replaceAll("<<test_class_name>>", testClass.className());
     }
 }

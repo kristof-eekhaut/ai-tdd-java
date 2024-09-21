@@ -21,34 +21,35 @@ public class ExampleCodeEndpoints {
 
     private final JavaCodeService javaCodeService;
 
-    @PostMapping("/write-code")
-    public ResponseEntity<String> writeCode() {
-        JavaClass javaClass = new JavaClass(GENERATED_CODE_PACKAGE, GENERATED_CODE_FILE_NAME, false);
-        return runFromCodeExample(false);
-    }
-
-    @PostMapping("/write-tests")
-    public ResponseEntity<String> writeTests() {
-        return runFromCodeExample(true);
-    }
-
-    private ResponseEntity<String> runFromCodeExample(boolean isTest) {
+    @PostMapping("/example")
+    public ResponseEntity<String> example() {
         JavaClass javaClass = new JavaClass(GENERATED_CODE_PACKAGE, GENERATED_CODE_FILE_NAME, false);
         JavaClass testClass = javaClass.getTestJavaClass();
 
-        String output = AIJavaCoder.codeExample(AIJavaCoder.SystemPromptParams.builder()
-                .isTest(isTest)
-                .packageName(javaClass.packageName())
-                .className(javaClass.className())
-                .testClassName(testClass.className())
-                .build());
+        JavaClass generatedTests = generateTests(testClass, javaClass);
+        JavaClass generatedClass = generateImplementation(testClass, javaClass);
 
-        JavaClass outputClass = (isTest ? testClass : javaClass).addContent(output);
-        File javaFile = javaCodeService.writeJavaFile(outputClass);
-        JavaCodeService.CompilationResult compileResult = javaCodeService.compile(outputClass, javaFile);
+        JavaCodeService.CompilationResult compilationCode = writeAndCompile(generatedClass);
+        log.info("Compile implementation: \n{}", compilationCode.logging());
 
-        log.info("Compile logging: \n{}", compileResult.logging());
+        JavaCodeService.CompilationResult compilationTests = writeAndCompile(generatedTests);
+        log.info("Compile tests: \n{}", compilationTests.logging());
 
-        return ResponseEntity.ok(output);
+        return ResponseEntity.ok("OK");
+    }
+
+    private JavaCodeService.CompilationResult writeAndCompile(JavaClass generatedClass) {
+        File javaFile = javaCodeService.writeJavaFile(generatedClass);
+        return javaCodeService.compile(generatedClass, javaFile);
+    }
+
+    private JavaClass generateTests(JavaClass testClass, JavaClass javaClass) {
+        String output = AIJavaCoder.codeExample(testClass, javaClass, true);
+        return testClass.addContent(output);
+    }
+
+    private JavaClass generateImplementation(JavaClass testClass, JavaClass javaClass) {
+        String output = AIJavaCoder.codeExample(testClass, javaClass, false);
+        return javaClass.addContent(output);
     }
 }
