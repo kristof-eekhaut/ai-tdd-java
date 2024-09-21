@@ -9,11 +9,13 @@ public record JavaClass(
         boolean isTestClass,
         Optional<String> content
 ) {
-    private static final String CODE_BASE_DIR = "src/main/java/";
-    private static final String TEST_DIR = "src/test/java";
-    private static final String CODE_COMPILATION_DIR = "target/classes/";
-    private static final String TEST_COMPILATION_DIR = "target/test-classes/";
-    private static final String TEST_SUFFIX = "Test";
+    public static final String GENERATION_DIR = "generated-code";
+    public static final String CODE_BASE_DIR = GENERATION_DIR + "/src/main/java";
+    public static final String TEST_DIR = GENERATION_DIR + "/src/test/java";
+    public static final String COMPILATION_DIR = GENERATION_DIR + "/target";
+    public static final String CODE_COMPILATION_DIR = COMPILATION_DIR + "/classes";
+    public static final String TEST_COMPILATION_DIR = COMPILATION_DIR + "/test-classes";
+    public static final String TEST_SUFFIX = "Test";
 
     public JavaClass(String packageName, String className, boolean isTestClass, String content) {
         this(packageName, className, isTestClass, Optional.ofNullable(content));

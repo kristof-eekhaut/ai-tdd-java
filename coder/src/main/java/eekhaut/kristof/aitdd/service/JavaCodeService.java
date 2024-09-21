@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 
 @Slf4j
@@ -77,7 +78,9 @@ public class JavaCodeService {
                 fileManager.setLocation(StandardLocation.CLASS_OUTPUT, List.of(javaClass.getClassBaseDir()));
 
                 Iterable<? extends JavaFileObject> compilationUnits = fileManager.getJavaFileObjectsFromFiles(List.of(javaSourceFile));
-                JavaCompiler.CompilationTask task = compiler.getTask(printWriter, fileManager, null, List.of("-proc:none"), null, compilationUnits);
+                
+                List<String> options = List.of("-proc:none", "-classpath", assembleCompilationClasspath());
+                JavaCompiler.CompilationTask task = compiler.getTask(printWriter, fileManager, null, options, null, compilationUnits);
 
                 compilationSuccess = task.call();
             } catch (IOException e) {
@@ -86,6 +89,16 @@ public class JavaCodeService {
         }
 
         return new CompileOutput(compilationSuccess, logOutputStream.toString());
+    }
+
+    private String assembleCompilationClasspath() {
+        String mvnClasspath;
+        try {
+            mvnClasspath = new String(Files.readAllBytes(Paths.get(JavaClass.COMPILATION_DIR + "/classpath.txt")));
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to configure file manager", e);
+        }
+        return String.join(":", JavaClass.CODE_COMPILATION_DIR, JavaClass.TEST_COMPILATION_DIR, mvnClasspath);
     }
 
     private void createDirectory(File directory) {

@@ -31,5 +31,5 @@ build/
 
 ### VS Code ###
 .vscode/
-/src/main/java/eekhaut/kristof/aitdd/generated/
-/src/test/java/eekhaut/kristof/aitdd/generated/
+/generated-code/src/main/java/eekhaut/kristof/aitdd/generated/
+/generated-code/src/test/java/eekhaut/kristof/aitdd/generated/
